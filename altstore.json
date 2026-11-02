@@ -9,16 +9,17 @@
     "localizedDescription": "Agenda com GPS em segundo plano e lembretes locais.",
     "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
     "versions": [{
-      "version": "1.0.2",
-      "buildVersion": "2",
-      "date": "2026-11-02T23:33:55Z",
+      "version": "1.0.4",
+      "buildVersion": "4",
+      "date": "2026-11-02T23:35:06Z",
       "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
       "size": 859796,
       "minOSVersion": "14.0"
     }],
     "appPermissions": { "entitlements": [], "privacy": {
       "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
-      "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
+      "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado.",
+      "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
   }],
   "news": []
 }
