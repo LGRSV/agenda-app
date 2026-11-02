@@ -30,6 +30,8 @@ jobs:
         run: |
           P=ios/App/App/Info.plist
           pb() { /usr/libexec/PlistBuddy -c "$1" "$P" || true; }
+          pb "Set :CFBundleShortVersionString 1.0.${{ github.run_number }}"
+          pb "Set :CFBundleVersion ${{ github.run_number }}"
           pb "Delete :CFBundleDisplayName"
           pb "Add :CFBundleDisplayName string Agenda"
           pb "Add :NSLocationWhenInUseUsageDescription string A Agenda usa sua localização para registrar chegadas e saídas dos seus lugares."
@@ -73,3 +75,43 @@ jobs:
         run: |
           gh release view ultima >/dev/null 2>&1 || gh release create ultima --title "Agenda (iOS)" --notes "Instalar pelo AltStore."
           gh release upload ultima out/Agenda.ipa --clobber
+
+      - name: Atualizar a fonte do AltStore (altstore.json)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAM=$(stat -f%z out/Agenda.ipa)
+          VER="1.0.${{ github.run_number }}"
+          DATA=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          git fetch origin fonte 2>/dev/null && git checkout fonte 2>/dev/null || git checkout --orphan fonte
+          git rm -rq . 2>/dev/null || true
+          cat > altstore.json <<JSON
+          {
+            "name": "Agenda do Lagares",
+            "identifier": "com.lgrsv.agenda.fonte",
+            "sourceURL": "https://raw.githubusercontent.com/LGRSV/agenda-app/fonte/altstore.json",
+            "apps": [{
+              "name": "Agenda",
+              "bundleIdentifier": "com.lgrsv.agenda",
+              "developerName": "LGRSV",
+              "localizedDescription": "Agenda com GPS em segundo plano e lembretes locais.",
+              "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
+              "versions": [{
+                "version": "$VER",
+                "buildVersion": "${{ github.run_number }}",
+                "date": "$DATA",
+                "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
+                "size": $TAM,
+                "minOSVersion": "14.0"
+              }],
+              "appPermissions": { "entitlements": [], "privacy": {
+                "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
+                "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
+            }],
+            "news": []
+          }
+          JSON
+          python3 -m json.tool altstore.json > /dev/null
+          git -c user.name="github-actions" -c user.email="actions@github.com" add altstore.json
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -qm "Fonte AltStore: Agenda $VER"
+          git push -q origin fonte
