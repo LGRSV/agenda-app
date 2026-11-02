@@ -1,0 +1,75 @@
+name: Compilar app iOS (sem assinatura, para o AltStore)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Dependências
+        run: npm install --no-audit --no-fund
+
+      - name: Projeto iOS
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Permissões, segundo plano e domínios (Info.plist)
+        run: |
+          P=ios/App/App/Info.plist
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$P" || true; }
+          pb "Delete :CFBundleDisplayName"
+          pb "Add :CFBundleDisplayName string Agenda"
+          pb "Add :NSLocationWhenInUseUsageDescription string A Agenda usa sua localização para registrar chegadas e saídas dos seus lugares."
+          pb "Add :NSLocationAlwaysAndWhenInUseUsageDescription string A Agenda registra chegadas e saídas mesmo com o app fechado."
+          pb "Add :NSLocationAlwaysUsageDescription string A Agenda registra chegadas e saídas mesmo com o app fechado."
+          pb "Add :UIBackgroundModes array"
+          pb "Add :UIBackgroundModes:0 string location"
+          pb "Add :WKAppBoundDomains array"
+          pb "Add :WKAppBoundDomains:0 string lgrsv.github.io"
+          pb "Add :WKAppBoundDomains:1 string uabpevnjfcwidbjscowq.supabase.co"
+          /usr/libexec/PlistBuddy -c "Print" "$P"
+
+      - name: Ícone
+        run: |
+          curl -fsSL https://lgrsv.github.io/agenda-iphone/icon-512.png -o /tmp/icon.png
+          sips -z 1024 1024 /tmp/icon.png --out /tmp/icon1024.png
+          sips -s format png -s formatOptions default /tmp/icon1024.png --out /tmp/icon1024.png
+          ICON=$(ls ios/App/App/Assets.xcassets/AppIcon.appiconset/*.png | head -1)
+          cp /tmp/icon1024.png "$ICON"
+
+      - name: Compilar (sem assinatura)
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -sdk iphoneos \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+
+      - name: Gerar .ipa
+        run: |
+          mkdir -p out/Payload
+          cp -R ios/App/build/Build/Products/Release-iphoneos/App.app out/Payload/
+          cd out && zip -qry Agenda.ipa Payload && ls -la Agenda.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Agenda-ipa
+          path: out/Agenda.ipa
+
+      - name: Publicar na release "ultima"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view ultima >/dev/null 2>&1 || gh release create ultima --title "Agenda (iOS)" --notes "Instalar pelo AltStore."
+          gh release upload ultima out/Agenda.ipa --clobber
