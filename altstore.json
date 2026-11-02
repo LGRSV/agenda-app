@@ -1,0 +1,25 @@
+{
+  "name": "Agenda do Lagares",
+  "identifier": "com.lgrsv.agenda.fonte",
+  "sourceURL": "https://raw.githubusercontent.com/LGRSV/agenda-app/fonte/altstore.json",
+  "apps": [{
+    "name": "Agenda",
+    "bundleIdentifier": "com.lgrsv.agenda",
+    "developerName": "LGRSV",
+    "localizedDescription": "Agenda com GPS em segundo plano e lembretes locais.",
+    "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
+    "versions": [{
+      "version": "1.0.3",
+      "buildVersion": "3",
+      "date": "2026-11-02T23:28:53Z",
+      "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
+      "size": 859797,
+      "minOSVersion": "14.0"
+    }],
+    "appPermissions": { "entitlements": [], "privacy": {
+      "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
+      "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado.",
+      "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
+  }],
+  "news": []
+}
