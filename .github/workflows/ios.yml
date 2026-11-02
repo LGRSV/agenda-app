@@ -106,7 +106,8 @@ jobs:
               }],
               "appPermissions": { "entitlements": [], "privacy": {
                 "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
-                "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
+                "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado.",
+                "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
             }],
             "news": []
           }
