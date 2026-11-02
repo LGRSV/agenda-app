@@ -1,0 +1,13 @@
+{
+  "appId": "com.lgrsv.agenda",
+  "appName": "Agenda",
+  "webDir": "www",
+  "server": {
+    "url": "https://lgrsv.github.io/agenda-iphone/",
+    "allowNavigation": ["lgrsv.github.io", "uabpevnjfcwidbjscowq.supabase.co"]
+  },
+  "ios": {
+    "limitsNavigationsToAppBoundDomains": true,
+    "contentInset": "never"
+  }
+}
