@@ -32,7 +32,10 @@ jobs:
 
       - name: Projeto iOS (Swift Package Manager)
         run: |
-          npx cap add ios --packagemanager SPM
+          # O 'cap add' do CLI 7 erra o gerenciador no sync interno (tenta pod install); o projeto SPM
+          # já fica criado, e o 'cap sync' abaixo detecta o CapApp-SPM e faz o resto.
+          npx cap add ios --packagemanager SPM || true
+          test -d ios/App/CapApp-SPM
           # O SideSign (renovação do perfil) exige iOS 15.
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' ios/App/App.xcodeproj/project.pbxproj
           npx cap sync ios
