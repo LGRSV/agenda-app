@@ -9,11 +9,11 @@
     "localizedDescription": "Agenda com GPS em segundo plano, lembretes locais e renovação automática do perfil de 7 dias (LocalDevVPN + pairing file).",
     "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
     "versions": [{
-      "version": "1.0.7",
-      "buildVersion": "7",
-      "date": "2026-11-03T00:14:27Z",
+      "version": "1.0.8",
+      "buildVersion": "8",
+      "date": "2026-11-03T00:24:48Z",
       "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
-      "size": 5477452,
+      "size": 5483438,
       "minOSVersion": "15.0"
     }],
     "appPermissions": { "entitlements": [], "privacy": {
