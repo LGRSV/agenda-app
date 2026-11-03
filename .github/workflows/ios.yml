@@ -39,6 +39,9 @@ jobs:
           # O SideSign (renovação do perfil) exige iOS 15.
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' ios/App/App.xcodeproj/project.pbxproj
           npx cap sync ios
+          # Fixa as versões das dependências SPM (SideSign e as do mahee96 seguem branch main).
+          mkdir -p ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp .github/Package.resolved ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           cat ios/App/CapApp-SPM/Package.swift
           cat ios/App/App/capacitor.config.json
           grep -q AgendaRenovacaoPlugin ios/App/App/capacitor.config.json
