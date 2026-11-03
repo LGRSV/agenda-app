@@ -13,6 +13,7 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "estado", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "entrar", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "entrarNativo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "enviarCodigo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelarEntrada", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "sair", returnType: CAPPluginReturnPromise),
@@ -60,6 +61,48 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do { call.resolve(try await motor.entrar(appleID: id, senha: senha)) }
             catch { rejeitar(call, error) }
+        }
+    }
+
+    /// Login com janela NATIVA do iOS: Apple ID e senha nunca passam pelo JavaScript da página
+    /// (que vem da internet). O JS só recebe o resultado (nome e Apple ID mascarado).
+    @objc func entrarNativo(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let vc = self.bridge?.viewController else {
+                call.reject("Tela indisponível.")
+                return
+            }
+            let alerta = UIAlertController(title: "Entrar com o Apple ID",
+                                           message: "Use o mesmo Apple ID do AltStore. A senha fica só no Keychain deste iPhone.",
+                                           preferredStyle: .alert)
+            alerta.addTextField { t in
+                t.placeholder = "Apple ID (e-mail)"
+                t.keyboardType = .emailAddress
+                t.textContentType = .username
+                t.autocapitalizationType = .none
+                t.autocorrectionType = .no
+            }
+            alerta.addTextField { t in
+                t.placeholder = "Senha"
+                t.isSecureTextEntry = true
+                t.textContentType = .password
+            }
+            alerta.addAction(UIAlertAction(title: "Cancelar", style: .cancel) { _ in
+                call.reject("Cancelado.")
+            })
+            alerta.addAction(UIAlertAction(title: "Entrar", style: .default) { [weak self] _ in
+                let id = (alerta.textFields?[0].text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let senha = alerta.textFields?[1].text ?? ""
+                guard let self, !id.isEmpty, !senha.isEmpty else {
+                    call.reject("Informe Apple ID e senha.")
+                    return
+                }
+                Task {
+                    do { call.resolve(try await self.motor.entrar(appleID: id, senha: senha)) }
+                    catch { self.rejeitar(call, error) }
+                }
+            })
+            vc.present(alerta, animated: true)
         }
     }
 
