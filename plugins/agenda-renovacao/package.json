@@ -1,0 +1,12 @@
+{
+  "name": "agenda-renovacao",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plugin nativo da Agenda: renova sozinho o perfil de provisionamento de 7 dias (conta Apple gratuita), como o SideStore.",
+  "license": "AGPL-3.0-only",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

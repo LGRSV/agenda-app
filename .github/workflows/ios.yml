@@ -10,9 +10,18 @@ permissions:
 
 jobs:
   ios:
-    runs-on: macos-15
+    # macos-26 traz o Xcode 26.x (o SideSign exige Swift 6 / swift-tools 6.0).
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+
+      - name: Xcode (a versão estável mais nova do runner)
+        run: |
+          ls -d /Applications/Xcode*.app
+          X=$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -1)
+          sudo xcode-select -s "$X/Contents/Developer"
+          xcodebuild -version
+          swift --version
 
       - uses: actions/setup-node@v4
         with:
@@ -21,10 +30,21 @@ jobs:
       - name: Dependências
         run: npm install --no-audit --no-fund
 
-      - name: Projeto iOS
+      - name: Projeto iOS (Swift Package Manager)
         run: |
-          npx cap add ios
+          # O 'cap add' do CLI 7 erra o gerenciador no sync interno (tenta pod install); o projeto SPM
+          # já fica criado, e o 'cap sync' abaixo detecta o CapApp-SPM e faz o resto.
+          npx cap add ios --packagemanager SPM || true
+          test -d ios/App/CapApp-SPM
+          # O SideSign (renovação do perfil) exige iOS 15.
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' ios/App/App.xcodeproj/project.pbxproj
           npx cap sync ios
+          # Fixa as versões das dependências SPM (SideSign e as do mahee96 seguem branch main).
+          mkdir -p ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp .github/Package.resolved ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          cat ios/App/CapApp-SPM/Package.swift
+          cat ios/App/App/capacitor.config.json
+          grep -q AgendaRenovacaoPlugin ios/App/App/capacitor.config.json
 
       - name: Permissões, segundo plano e domínios (Info.plist)
         run: |
@@ -54,9 +74,26 @@ jobs:
 
       - name: Compilar (sem assinatura)
         run: |
+          set -o pipefail
           cd ios/App
-          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -sdk iphoneos \
-            -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+          if ! xcodebuild -project App.xcodeproj -scheme App -configuration Release -sdk iphoneos \
+                -destination 'generic/platform=iOS' -derivedDataPath build \
+                -skipPackagePluginValidation -skipMacroValidation \
+                CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1; then
+            grep -E "error:|fatal|cannot|unable to" build.log | sort -u | head -120
+            tail -60 build.log
+            exit 1
+          fi
+          tail -15 build.log
+          cat App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved || true
+
+      - name: Log da compilação (se falhar)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ios/App/build.log
+          if-no-files-found: ignore
 
       - name: Gerar .ipa
         run: |
@@ -70,6 +107,7 @@ jobs:
           path: out/Agenda.ipa
 
       - name: Publicar na release "ultima"
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -77,6 +115,7 @@ jobs:
           gh release upload ultima out/Agenda.ipa --clobber
 
       - name: Atualizar a fonte do AltStore (altstore.json)
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -94,7 +133,7 @@ jobs:
               "name": "Agenda",
               "bundleIdentifier": "com.lgrsv.agenda",
               "developerName": "LGRSV",
-              "localizedDescription": "Agenda com GPS em segundo plano e lembretes locais.",
+              "localizedDescription": "Agenda com GPS em segundo plano, lembretes locais e renovação automática do perfil de 7 dias (LocalDevVPN + pairing file).",
               "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
               "versions": [{
                 "version": "$VER",
@@ -102,7 +141,7 @@ jobs:
                 "date": "$DATA",
                 "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
                 "size": $TAM,
-                "minOSVersion": "14.0"
+                "minOSVersion": "15.0"
               }],
               "appPermissions": { "entitlements": [], "privacy": {
                 "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",

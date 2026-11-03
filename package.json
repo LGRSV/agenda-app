@@ -2,13 +2,14 @@
   "name": "agenda-app",
   "private": true,
   "version": "1.0.0",
-  "description": "Casca nativa (Capacitor) da Agenda do Lagares: GPS em segundo plano e lembretes locais.",
+  "description": "Casca nativa (Capacitor) da Agenda do Lagares: GPS em segundo plano, lembretes locais e renovação automática do perfil de 7 dias.",
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.22",
     "@capacitor/app": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
     "@capacitor/local-notifications": "^7.0.0",
-    "@capacitor-community/background-geolocation": "^1.2.22"
+    "agenda-renovacao": "file:plugins/agenda-renovacao"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"
