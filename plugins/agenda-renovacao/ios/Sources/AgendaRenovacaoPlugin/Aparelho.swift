@@ -1,4 +1,5 @@
-// Aparelho.swift — fala com o próprio iPhone pelo serviço misagent (instala/lista perfis de provisionamento).
+// Aparelho.swift — fala com o próprio iPhone pelo serviço misagent (instala/lista perfis de provisionamento)
+// e, para atualizar o app, pelo AFC (envia a .ipa) + installation_proxy (instala).
 // Usa a biblioteca IDevice (SideStore/idevice), a mesma do backend "idevice" do minimuxer do SideStore
 // (DeviceGateway/idevice/IdeviceGateway.swift: performWithTcpService / performWithService + misagent_install).
 // O caminho de rede é a VPN de loopback do app LocalDevVPN (o iPhone se enxerga em 10.7.0.1) e o
@@ -112,6 +113,60 @@ enum Aparelho {
         }
     }
 
+    // MARK: instalação de app (AFC + installation_proxy)
+
+    // Igual ao IdeviceGateway do minimuxer (sendIpaAfc + installIpa): a .ipa vai pelo AFC para
+    // PublicStaging/<bundle id>/app.ipa e o installation_proxy instala (atualiza, se o app já existe).
+    typealias ConectaLockdown = (OpaquePointer?, UnsafeMutablePointer<OpaquePointer?>?) -> UnsafeMutablePointer<IdeviceFfiError>?
+    typealias ConectaRSD = (OpaquePointer?, OpaquePointer?, UnsafeMutablePointer<OpaquePointer?>?) -> UnsafeMutablePointer<IdeviceFfiError>?
+    static let pastaStaging = "PublicStaging"
+
+    static func enviarPacote(_ ipa: URL, bundleID: String, pareamento: Data, ip: String, portaRP: UInt16,
+                             progresso: @escaping (Double) -> Void) async throws {
+        let dados = try Data(contentsOf: ipa, options: .mappedIfSafe)
+        guard !dados.isEmpty else { throw FalhaRenovacao("Pacote vazio.") }
+        try await emSegundoPlano {
+            try Aparelho.comServico(pareamento: pareamento, ip: ip, portaRP: portaRP, nome: "AFC",
+                                    lockdown: afc_client_connect, rsd: afc_client_connect_rsd,
+                                    liberar: afc_client_free) { cliente in
+                let pasta = "\(Aparelho.pastaStaging)/\(bundleID)"
+                // As pastas podem já existir e a sobra de uma tentativa anterior pode não existir: erros ignorados.
+                Aparelho.ignorar(Aparelho.pastaStaging.withCString { afc_make_directory(cliente, $0) })
+                Aparelho.ignorar(pasta.withCString { afc_remove_path_and_contents(cliente, $0) })
+                Aparelho.ignorar(pasta.withCString { afc_make_directory(cliente, $0) })
+                var arquivo: OpaquePointer? = nil
+                try Aparelho.checar("\(pasta)/app.ipa".withCString { afc_file_open(cliente, $0, AfcFopenMode(rawValue: 4), &arquivo) },
+                           "abrir o arquivo no iPhone (AFC)")
+                guard let arquivo else { throw FalhaRenovacao("O AFC não abriu o arquivo no iPhone.") }
+                defer { Aparelho.ignorar(afc_file_close(arquivo)) }
+                try dados.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+                    guard let base = buf.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                        throw FalhaRenovacao("Pacote vazio.")
+                    }
+                    let bloco = 1 << 20
+                    var feito = 0
+                    while feito < dados.count {
+                        let n = min(bloco, dados.count - feito)
+                        try Aparelho.checar(afc_file_write(arquivo, base + feito, n), "enviar o pacote para o iPhone (AFC)")
+                        feito += n
+                        progresso(Double(feito) / Double(dados.count))
+                    }
+                }
+            }
+        }
+    }
+
+    static func instalarPacote(bundleID: String, pareamento: Data, ip: String, portaRP: UInt16) async throws {
+        try await emSegundoPlano {
+            try Aparelho.comServico(pareamento: pareamento, ip: ip, portaRP: portaRP, nome: "installation_proxy",
+                                    lockdown: installation_proxy_connect, rsd: installation_proxy_connect_rsd,
+                                    liberar: installation_proxy_client_free) { cliente in
+                try Aparelho.checar("\(Aparelho.pastaStaging)/\(bundleID)/app.ipa".withCString { installation_proxy_install(cliente, $0, nil) },
+                           "instalar a versão nova")
+            }
+        }
+    }
+
     // MARK: internos
 
     private static func emSegundoPlano<T>(_ trabalho: @escaping () throws -> T) async throws -> T {
@@ -143,6 +198,71 @@ enum Aparelho {
             try p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
                 try corpo(sa, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
+        }
+    }
+
+    private static func ignorar(_ erro: UnsafeMutablePointer<IdeviceFfiError>?) {
+        if let erro, Int(bitPattern: erro) > 0xff { idevice_error_free(erro) }
+    }
+
+    /// Mesmo caminho do comMisagent (pairing lockdown -> provider TCP; RemotePairing -> túnel RSD),
+    /// para qualquer serviço (AFC, installation_proxy). Uma conexão nova por chamada, como o minimuxer.
+    private static func comServico<T>(pareamento: Data, ip: String, portaRP: UInt16, nome: String,
+                                      lockdown: ConectaLockdown, rsd: ConectaRSD,
+                                      liberar: (OpaquePointer?) -> Void,
+                                      _ acao: (OpaquePointer) throws -> T) throws -> T {
+        switch try tipo(de: pareamento) {
+        case .lockdown:
+            var arquivo: OpaquePointer? = nil
+            try pareamento.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+                try checar(idevice_pairing_file_from_bytes(buf.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                                           UInt(pareamento.count), &arquivo),
+                           "ler o arquivo de pareamento")
+            }
+            guard let arquivo else { throw FalhaRenovacao("Arquivo de pareamento ilegível.") }
+            var provedor: OpaquePointer? = nil
+            // O provider consome o pairing file (não liberar depois).
+            let erroProv = try comSockaddr(ip: ip, porta: portaLockdown) { sa, _ in
+                idevice_tcp_provider_new(sa, arquivo, rotulo, &provedor)
+            }
+            try checar(erroProv, "abrir conexão com o iPhone em \(ip)")
+            guard let provedor else { throw FalhaRenovacao("Conexão com o iPhone não criada.") }
+            var cliente: OpaquePointer? = nil
+            if let erro = lockdown(provedor, &cliente) {
+                // Como no minimuxer: em erro o provider não é liberado aqui.
+                try checar(erro, "abrir o serviço \(nome) (VPN ligada? pareamento certo?)")
+            }
+            defer { idevice_provider_free(provedor) }
+            guard let cliente else { throw FalhaRenovacao("Serviço \(nome) não respondeu.") }
+            defer { liberar(cliente) }
+            return try acao(cliente)
+
+        case .rppairing:
+            var arquivo: OpaquePointer? = nil
+            try pareamento.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+                try checar(rp_pairing_file_from_bytes(buf.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                                      UInt(pareamento.count), &arquivo),
+                           "ler o arquivo de pareamento (RemotePairing)")
+            }
+            guard let arquivo else { throw FalhaRenovacao("Arquivo de pareamento ilegível.") }
+            defer { rp_pairing_file_free(arquivo) }
+            var adaptador: OpaquePointer? = nil
+            var aperto: OpaquePointer? = nil
+            let erroTunel = try comSockaddr(ip: ip, porta: portaRP) { sa, tam in
+                rotulo.withCString { host in
+                    tunnel_create_rppairing_with_options(sa, tam, host, arquivo, false, nil, nil, &adaptador, &aperto)
+                }
+            }
+            try checar(erroTunel, "abrir o túnel RemotePairing em \(ip):\(portaRP)")
+            defer {
+                if let aperto { rsd_handshake_free(aperto) }
+                if let adaptador { adapter_free(adaptador) }
+            }
+            var cliente: OpaquePointer? = nil
+            try checar(rsd(adaptador, aperto, &cliente), "abrir o serviço \(nome) (RSD)")
+            guard let cliente else { throw FalhaRenovacao("Serviço \(nome) não respondeu.") }
+            defer { liberar(cliente) }
+            return try acao(cliente)
         }
     }
 

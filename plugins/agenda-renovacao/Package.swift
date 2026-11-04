@@ -5,6 +5,8 @@
 //   - SideSign (https://github.com/SideStore/SideSign): login GSA/2FA, anisette remoto e portal do desenvolvedor;
 //   - IDevice (https://github.com/SideStore/idevice, mesmo binário que o minimuxer do SideStore usa):
 //     instala o perfil pelo serviço misagent do iOS, através da VPN de loopback (LocalDevVPN) + pairing file.
+// E atualiza o próprio app como o SideStore instala apps: baixa a .ipa da release, reassina no iPhone
+// (AppBundleSigner do SideSign) e instala pelo AFC + installation_proxy do IDevice, pela mesma VPN.
 // Licença: AGPL-3.0 (código derivado/inspirado no SideStore, https://github.com/SideStore/SideStore).
 import PackageDescription
 
