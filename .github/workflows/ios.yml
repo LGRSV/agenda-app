@@ -95,6 +95,25 @@ jobs:
           path: ios/App/build.log
           if-no-files-found: ignore
 
+      - name: Ícones alternativos (trocados pelo próprio app, sem reinstalar)
+        run: |
+          APP=ios/App/build/Build/Products/Release-iphoneos/App.app
+          P="$APP/Info.plist"
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$P"; }
+          pb "Print :CFBundleIcons" >/dev/null 2>&1 || pb "Add :CFBundleIcons dict"
+          pb "Print :CFBundleIcons:CFBundleAlternateIcons" >/dev/null 2>&1 || pb "Add :CFBundleIcons:CFBundleAlternateIcons dict"
+          for f in icones/*-1024.png; do
+            NOME=$(basename "$f" -1024.png)
+            sips -s format png -z 120 120 "$f" --out "$APP/Icone${NOME}@2x.png" >/dev/null
+            sips -s format png -z 180 180 "$f" --out "$APP/Icone${NOME}@3x.png" >/dev/null
+            pb "Add :CFBundleIcons:CFBundleAlternateIcons:${NOME} dict"
+            pb "Add :CFBundleIcons:CFBundleAlternateIcons:${NOME}:CFBundleIconFiles array"
+            pb "Add :CFBundleIcons:CFBundleAlternateIcons:${NOME}:CFBundleIconFiles:0 string Icone${NOME}"
+            pb "Add :CFBundleIcons:CFBundleAlternateIcons:${NOME}:UIPrerenderedIcon bool false"
+          done
+          pb "Print :CFBundleIcons"
+          ls -la "$APP" | grep -i icone
+
       - name: Gerar .ipa
         run: |
           mkdir -p out/Payload

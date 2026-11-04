@@ -1,9 +1,10 @@
 // AgendaRenovacaoPlugin.swift — ponte Capacitor (JS: Capacitor.registerPlugin('AgendaRenovacao')).
-// Métodos: estado, entrar, enviarCodigo, cancelarEntrada, sair, salvarPareamento, apagarPareamento, renovar.
+// Métodos: estado, entrar, enviarCodigo, cancelarEntrada, sair, salvarPareamento, apagarPareamento, renovar, iconeAtual, trocarIcone.
 // Evento: "codigo2fa" {modo, erro?, telefone?} -> responder com enviarCodigo({codigo}) ou enviarCodigo({sms:true}).
 // Parte do plugin AgendaRenovacao (AGPL-3.0), baseado no fluxo de renovação do SideStore.
 // ATENÇÃO: só este arquivo pode ter a anotação objc com nome — o Capacitor CLI procura ela para registrar o plugin.
 import Foundation
+import UIKit
 import Capacitor
 
 @objc(AgendaRenovacaoPlugin)
@@ -19,7 +20,9 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "sair", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "salvarPareamento", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "apagarPareamento", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "renovar", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "renovar", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "iconeAtual", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "trocarIcone", returnType: CAPPluginReturnPromise)
     ]
 
     private let motor = Renovador.shared
@@ -146,6 +149,35 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do { call.resolve(try await motor.renovar(ip: ip, portaRP: porta)) }
             catch { rejeitar(call, error) }
+        }
+    }
+
+    // Ícones alternativos (ex.: "AC"), embutidos no app pelo build. "" volta ao ícone padrão (JL).
+    @objc func iconeAtual(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve([
+                "icone": UIApplication.shared.alternateIconName ?? "",
+                "suporta": UIApplication.shared.supportsAlternateIcons
+            ])
+        }
+    }
+
+    @objc func trocarIcone(_ call: CAPPluginCall) {
+        let nome = (call.getString("nome") ?? "").trimmingCharacters(in: .whitespaces)
+        DispatchQueue.main.async {
+            guard UIApplication.shared.supportsAlternateIcons else {
+                call.reject("Este iPhone não permite trocar o ícone.")
+                return
+            }
+            let alvo: String? = nome.isEmpty ? nil : nome
+            if UIApplication.shared.alternateIconName == alvo {
+                call.resolve(["icone": nome, "mudou": false])
+                return
+            }
+            UIApplication.shared.setAlternateIconName(alvo) { erro in
+                if let erro = erro { call.reject(erro.localizedDescription) }
+                else { call.resolve(["icone": nome, "mudou": true]) }
+            }
         }
     }
 }
