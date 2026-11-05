@@ -10,6 +10,7 @@ enum Chave: String, CaseIterable {
     case token = "xcodeToken"
     case anisetteID = "anisetteID"
     case adiBlob = "anisetteAdiBlob"
+    case certificado = "certificadoAssinatura"   // "serial:p12 em base64" (a senha do p12 é o serial, como no SideStore)
 }
 
 enum Cofre {

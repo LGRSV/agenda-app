@@ -1,6 +1,8 @@
 // AgendaRenovacaoPlugin.swift — ponte Capacitor (JS: Capacitor.registerPlugin('AgendaRenovacao')).
-// Métodos: estado, entrar, enviarCodigo, cancelarEntrada, sair, salvarPareamento, apagarPareamento, renovar, iconeAtual, trocarIcone.
-// Evento: "codigo2fa" {modo, erro?, telefone?} -> responder com enviarCodigo({codigo}) ou enviarCodigo({sms:true}).
+// Métodos: estado, entrar, enviarCodigo, cancelarEntrada, sair, salvarPareamento, apagarPareamento, renovar, iconeAtual, trocarIcone,
+//          versaoDisponivel, atualizar ({revogar?, forcar?}), ligarVpn.
+// Eventos: "codigo2fa" {modo, erro?, telefone?} -> responder com enviarCodigo({codigo}) ou enviarCodigo({sms:true});
+//          "atualizacao" {etapa, texto, progresso 0-100} durante atualizar().
 // Parte do plugin AgendaRenovacao (AGPL-3.0), baseado no fluxo de renovação do SideStore.
 // ATENÇÃO: só este arquivo pode ter a anotação objc com nome — o Capacitor CLI procura ela para registrar o plugin.
 import Foundation
@@ -22,15 +24,23 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "apagarPareamento", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "renovar", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "iconeAtual", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "trocarIcone", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "trocarIcone", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "versaoDisponivel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "atualizar", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ligarVpn", returnType: CAPPluginReturnPromise)
     ]
 
     private let motor = Renovador.shared
+    private var tarefaFundo: UIBackgroundTaskIdentifier = .invalid
 
     override public func load() {
         motor.aoPedirCodigo = { [weak self] info in
             self?.notifyListeners("codigo2fa", data: info)
         }
+        motor.aoProgredir = { [weak self] info in
+            self?.notifyListeners("atualizacao", data: info)
+        }
+        motor.aoInstalar = { [weak self] in self?.sairParaTelaInicial() }
     }
 
     private func lerIP(_ call: CAPPluginCall) -> String {
@@ -149,6 +159,64 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do { call.resolve(try await motor.renovar(ip: ip, portaRP: porta)) }
             catch { rejeitar(call, error) }
+        }
+    }
+
+    // MARK: atualização do app (Atualizador.swift)
+
+    @objc func versaoDisponivel(_ call: CAPPluginCall) {
+        Task { call.resolve(await motor.versaoDisponivel()) }
+    }
+
+    @objc func atualizar(_ call: CAPPluginCall) {
+        let ip = lerIP(call), porta = lerPorta(call)
+        let revogar = call.getBool("revogar") ?? false, forcar = call.getBool("forcar") ?? false
+        Task {
+            do {
+                call.resolve(try await motor.atualizar(ip: ip, portaRP: porta, revogar: revogar, forcar: forcar))
+            } catch let e as PrecisaRevogar {
+                call.reject(e.localizedDescription, "PRECISA_REVOGAR", nil,
+                            ["mensagem": e.localizedDescription, "certificados": e.certificados])
+            } catch {
+                rejeitar(call, error)
+            }
+            DispatchQueue.main.async { [weak self] in self?.encerrarTarefaFundo() }
+        }
+    }
+
+    /// Como o InstallAppOperation.handleSelfReinstallation do SideStore: reinstalar o próprio app só termina
+    /// quando ele sai da frente. Segura o processo em segundo plano e vai para a tela inicial (sem forçar o fechamento).
+    private func sairParaTelaInicial() {
+        let app = UIApplication.shared
+        encerrarTarefaFundo()
+        tarefaFundo = app.beginBackgroundTask(withName: "AtualizarAgenda") { [weak self] in self?.encerrarTarefaFundo() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard app.applicationState == .active else { return }
+            _ = app.perform(#selector(NSXPCConnection.suspend))
+        }
+    }
+
+    private func encerrarTarefaFundo() {
+        guard tarefaFundo != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(tarefaFundo)
+        tarefaFundo = .invalid
+    }
+
+    /// Abre o LocalDevVPN pelo link dele (localdevvpn://enable?scheme=...): ele liga o túnel e,
+    /// 1 s depois, abre o esquema de volta (o deste app, se o Info.plist tiver um).
+    @objc func ligarVpn(_ call: CAPPluginCall) {
+        let tipos = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        let esquemas = tipos.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        let volta = esquemas.first(where: { $0 == "agenda-lgrsv" }) ?? esquemas.first
+        var c = URLComponents()
+        c.scheme = "localdevvpn"
+        c.host = "enable"
+        if let volta { c.queryItems = [URLQueryItem(name: "scheme", value: volta)] }
+        guard let url = c.url else { call.reject("Link do LocalDevVPN inválido."); return }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url, options: [:]) { ok in
+                call.resolve(["aberto": ok, "volta": volta ?? ""])
+            }
         }
     }
 

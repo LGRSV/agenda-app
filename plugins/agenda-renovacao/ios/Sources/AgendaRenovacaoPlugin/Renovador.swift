@@ -8,12 +8,12 @@ import SideSign
 final class Renovador: @unchecked Sendable {
     static let shared = Renovador()
 
-    private let portal = DeveloperPortal.shared
+    let portal = DeveloperPortal.shared
     private let xcodeVersion = "26.0 (26A242)"   // o mesmo padrão do SideStore (AnisetteConfigManager)
     private let listaServidores = URL(string: "https://servers.sidestore.io/servers.json")!
     private let servidoresReserva = ["https://ani.sidestore.io", "https://ani.sidestore.app",
                                      "https://ani.sidestore.zip", "https://ani.846969.xyz"]
-    private let d = UserDefaults.standard
+    let d = UserDefaults.standard
     private let kValidade = "agendaRenovacao.validade"
     private let kUltima = "agendaRenovacao.ultimaRenovacao"
     private let kErro = "agendaRenovacao.ultimoErro"
@@ -25,6 +25,10 @@ final class Renovador: @unchecked Sendable {
     private var telefoneSMS: String?
     private var ocupado = false
     var aoPedirCodigo: (([String: Any]) -> Void)?
+    // Atualização do app (Atualizador.swift): progresso para o JS e aviso de que a instalação vai começar.
+    var aoProgredir: (([String: Any]) -> Void)?
+    var aoInstalar: (() -> Void)?
+    var ultimoProgresso: (String, Int) = ("", -1)
 
     // MARK: pareamento
 
@@ -47,17 +51,17 @@ final class Renovador: @unchecked Sendable {
 
     func apagarPareamento() { try? FileManager.default.removeItem(at: arquivoPareamento) }
 
-    private func lerPareamento() -> Data? { try? Data(contentsOf: arquivoPareamento) }
+    func lerPareamento() -> Data? { try? Data(contentsOf: arquivoPareamento) }
 
     // MARK: perfil embutido (o que o AltStore colocou no app)
 
-    private struct PerfilLocal {
+    struct PerfilLocal {
         let teamID: String?
         let validade: Date?
         let certificados: [Data]
     }
 
-    private func perfilEmbutido() -> PerfilLocal? {
+    func perfilEmbutido() -> PerfilLocal? {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let dados = try? Data(contentsOf: url) else { return nil }
         return perfilLocal(dados)
@@ -228,7 +232,7 @@ final class Renovador: @unchecked Sendable {
 
     /// Sessão do portal: reaproveita dsid + token (como o AuthManager do SideStore); se não valer mais,
     /// entra de novo com a senha guardada (pode pedir 2FA pelo mesmo evento).
-    private func sessao() async throws -> (Account, Session) {
+    func sessao() async throws -> (Account, Session) {
         let anisette = try await obterAnisette()
         if let dsid = Cofre.ler(.dsid), let token = Cofre.ler(.token) {
             let s = Session(dsid: dsid, authToken: token, anisetteData: anisette, xcodeVersion: xcodeVersion)
@@ -322,17 +326,17 @@ final class Renovador: @unchecked Sendable {
 
     // MARK: util
 
-    private func comecar() throws {
+    func comecar() throws {
         trava.lock(); defer { trava.unlock() }
         if ocupado { throw FalhaRenovacao("Já existe uma operação em andamento.") }
         ocupado = true
     }
 
-    private func terminar() {
+    func terminar() {
         trava.lock(); ocupado = false; trava.unlock()
     }
 
-    private func iso(_ data: Date) -> String { ISO8601DateFormatter().string(from: data) }
+    func iso(_ data: Date) -> String { ISO8601DateFormatter().string(from: data) }
 
     private func mascarar(_ email: String) -> String {
         let partes = email.split(separator: "@", maxSplits: 1).map(String.init)
