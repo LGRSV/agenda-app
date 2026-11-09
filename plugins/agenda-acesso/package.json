@@ -1,0 +1,12 @@
+{
+  "name": "agenda-acesso",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plugin nativo da Agenda: ditado no aparelho, contatos, calendário, fotos e arquivos, sempre com permissão pedida na hora do toque.",
+  "license": "MIT",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

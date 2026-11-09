@@ -45,6 +45,7 @@ jobs:
           cat ios/App/CapApp-SPM/Package.swift
           cat ios/App/App/capacitor.config.json
           grep -q AgendaRenovacaoPlugin ios/App/App/capacitor.config.json
+          grep -q AgendaAcessoPlugin ios/App/App/capacitor.config.json
 
       - name: Permissões, segundo plano e domínios (Info.plist)
         run: |
@@ -57,6 +58,15 @@ jobs:
           pb "Add :NSLocationWhenInUseUsageDescription string A Agenda usa sua localização para registrar chegadas e saídas dos seus lugares."
           pb "Add :NSLocationAlwaysAndWhenInUseUsageDescription string A Agenda registra chegadas e saídas mesmo com o app fechado."
           pb "Add :NSLocationAlwaysUsageDescription string A Agenda registra chegadas e saídas mesmo com o app fechado."
+          # Plugin AgendaAcesso: cada permissão só é pedida quando o usuário toca na função.
+          pb "Add :NSMicrophoneUsageDescription string A Agenda usa o microfone só quando você toca no botão de falar, para ditar tarefas e perguntas ao Jarvis. O áudio não é gravado nem enviado."
+          pb "Add :NSSpeechRecognitionUsageDescription string O que você fala é transcrito em português no próprio iPhone para virar tarefa ou pergunta ao Jarvis."
+          pb "Add :NSContactsUsageDescription string A Agenda lê nome e telefone dos contatos que você buscar, para ligar uma tarefa a uma pessoa e abrir a ligação ou o WhatsApp. Os contatos não vão para a nuvem."
+          pb "Add :NSCalendarsFullAccessUsageDescription string A Agenda mostra na tela inicial os eventos do seu calendário de hoje e da semana. Os eventos não vão para a nuvem."
+          pb "Add :NSCalendarsUsageDescription string A Agenda mostra na tela inicial os eventos do seu calendário de hoje e da semana e cria eventos a partir das tarefas quando você pedir."
+          pb "Add :NSCalendarsWriteOnlyAccessUsageDescription string A Agenda cria no seu calendário o evento de uma tarefa quando você pedir."
+          pb "Add :NSPhotoLibraryAddUsageDescription string A Agenda salva no seu rolo só as imagens e PDFs que você mandar salvar."
+          pb "Add :NSPhotoLibraryUsageDescription string Você escolhe as fotos pelo seletor do iPhone; a Agenda só recebe as que você escolher."
           pb "Add :UIBackgroundModes array"
           pb "Add :UIBackgroundModes:0 string location"
           pb "Add :WKAppBoundDomains array"
@@ -171,7 +181,12 @@ jobs:
               "appPermissions": { "entitlements": [], "privacy": {
                 "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
                 "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado.",
-                "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
+                "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado.",
+                "NSMicrophoneUsageDescription": "Ditar tarefas e perguntas ao Jarvis (só ao tocar no microfone).",
+                "NSSpeechRecognitionUsageDescription": "Transcrever o ditado em português no próprio iPhone.",
+                "NSContactsUsageDescription": "Buscar nome e telefone para ligar uma tarefa a uma pessoa.",
+                "NSCalendarsFullAccessUsageDescription": "Mostrar os eventos do dia e da semana na tela inicial.",
+                "NSPhotoLibraryAddUsageDescription": "Salvar no rolo as imagens e PDFs que você pedir." } }
             }],
             "news": []
           }
