@@ -9,17 +9,22 @@
     "localizedDescription": "Agenda com GPS em segundo plano, lembretes locais, renovação automática do perfil de 7 dias e atualização pelo próprio app (LocalDevVPN + pairing file).",
     "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
     "versions": [{
-      "version": "1.0.12",
-      "buildVersion": "12",
-      "date": "2026-11-05T00:08:18Z",
+      "version": "1.0.14",
+      "buildVersion": "14",
+      "date": "2026-11-09T14:51:55Z",
       "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
-      "size": 5452425,
+      "size": 5516611,
       "minOSVersion": "15.0"
     }],
     "appPermissions": { "entitlements": [], "privacy": {
       "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
       "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado.",
-      "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado." } }
+      "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado.",
+      "NSMicrophoneUsageDescription": "Ditar tarefas e perguntas ao Jarvis (só ao tocar no microfone).",
+      "NSSpeechRecognitionUsageDescription": "Transcrever o ditado em português no próprio iPhone.",
+      "NSContactsUsageDescription": "Buscar nome e telefone para ligar uma tarefa a uma pessoa.",
+      "NSCalendarsFullAccessUsageDescription": "Mostrar os eventos do dia e da semana na tela inicial.",
+      "NSPhotoLibraryAddUsageDescription": "Salvar no rolo as imagens e PDFs que você pedir." } }
   }],
   "news": []
 }
