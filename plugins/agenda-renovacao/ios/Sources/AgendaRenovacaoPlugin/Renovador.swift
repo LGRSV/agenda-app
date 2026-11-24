@@ -53,7 +53,7 @@ final class Renovador: @unchecked Sendable {
 
     func lerPareamento() -> Data? { try? Data(contentsOf: arquivoPareamento) }
 
-    // MARK: perfil embutido (o que o AltStore colocou no app)
+    // MARK: perfil embutido (o que o SideStore, ou o AltStore, colocou no app)
 
     struct PerfilLocal {
         let teamID: String?
@@ -72,7 +72,7 @@ final class Renovador: @unchecked Sendable {
         return PerfilLocal(teamID: p.teamIdentifier, validade: p.expirationDate, certificados: certificados(dados))
     }
 
-    /// DeveloperCertificates do plist dentro do .mobileprovision (para ver se o certificado do AltStore continua no perfil novo).
+    /// DeveloperCertificates do plist dentro do .mobileprovision (para ver se o certificado do SideStore continua no perfil novo).
     private func certificados(_ dados: Data) -> [Data] {
         let texto = String(decoding: dados, as: UTF8.self)
         guard let i = texto.range(of: "<?xml"), let f = texto.range(of: "</plist>", range: i.lowerBound..<texto.endIndex),
@@ -92,7 +92,8 @@ final class Renovador: @unchecked Sendable {
         var r: [String: Any] = [
             "bundleId": bid,
             "logado": Cofre.ler(.token) != nil || Cofre.ler(.senha) != nil,
-            "temPareamento": FileManager.default.fileExists(atPath: arquivoPareamento.path)
+            "temPareamento": FileManager.default.fileExists(atPath: arquivoPareamento.path),
+            "instaladoPor": Self.instaladoPor   // "sidestore", "altstore" ou "" (SideStore.swift)
         ]
         if let id = Cofre.ler(.appleID) { r["appleId"] = mascarar(id) }
         if let t = emb?.teamID { r["teamId"] = t }
@@ -287,10 +288,10 @@ final class Renovador: @unchecked Sendable {
             throw FalhaRenovacao("Nenhum time de desenvolvedor nesta conta.")
         }
         if let t = emb?.teamID, t != time.identifier {
-            throw FalhaRenovacao("O app foi assinado pelo time \(t), mas este Apple ID é do time \(time.identifier). Entre com o mesmo Apple ID usado no AltStore.")
+            throw FalhaRenovacao("O app foi assinado pelo time \(t), mas este Apple ID é do time \(time.identifier). Entre com o mesmo Apple ID usado no SideStore.")
         }
 
-        // App ID do próprio app (o AltStore registra com sufixo do time, ex.: com.lgrsv.agenda.XXXXXXXXXX).
+        // App ID do próprio app (o SideStore registra com sufixo do time, ex.: com.lgrsv.agenda.XXXXXXXXXX).
         let appIDs = try await portal.fetchAppIDs(for: time, session: s)
         var appID = appIDs.first(where: { $0.bundleIdentifier.lowercased() == bid.lowercased() })
         if appID == nil {
@@ -304,7 +305,7 @@ final class Renovador: @unchecked Sendable {
         if let emb, !emb.certificados.isEmpty {
             let novos = Set(certificados(perfil.data))
             if !novos.isEmpty && Set(emb.certificados).isDisjoint(with: novos) {
-                aviso = "O certificado que assinou o app não está no perfil novo (pode ter sido revogado). Se o app não abrir, reinstale pelo AltStore."
+                aviso = "O certificado que assinou o app não está no perfil novo (pode ter sido revogado). Se o app não abrir, reinstale pelo SideStore."
             }
         }
 

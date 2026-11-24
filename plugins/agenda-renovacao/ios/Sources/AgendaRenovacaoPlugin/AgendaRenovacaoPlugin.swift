@@ -86,7 +86,7 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let alerta = UIAlertController(title: "Entrar com o Apple ID",
-                                           message: "Use o mesmo Apple ID do AltStore. A senha fica só no Keychain deste iPhone.",
+                                           message: "Use o mesmo Apple ID do SideStore. A senha fica só no Keychain deste iPhone.",
                                            preferredStyle: .alert)
             alerta.addTextField { t in
                 t.placeholder = "Apple ID (e-mail)"
@@ -177,6 +177,9 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
             } catch let e as PrecisaRevogar {
                 call.reject(e.localizedDescription, "PRECISA_REVOGAR", nil,
                             ["mensagem": e.localizedDescription, "certificados": e.certificados])
+            } catch let e as CertificadoDoSideStore {
+                call.reject(e.localizedDescription, "CERTIFICADO_SIDESTORE", nil,
+                            ["mensagem": e.localizedDescription, "fonte": Renovador.urlFonteSideStore.absoluteString])
             } catch {
                 rejeitar(call, error)
             }

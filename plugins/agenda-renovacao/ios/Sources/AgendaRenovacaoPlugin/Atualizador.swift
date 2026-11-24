@@ -1,4 +1,4 @@
-// Atualizador.swift — atualiza o próprio app sem AltStore, do jeito que o SideStore instala/atualiza apps no aparelho:
+// Atualizador.swift — atualiza o próprio app sem depender do SideStore, do jeito que o SideStore instala/atualiza apps:
 //   CertificateProvisioningFlow (certificado + chave privada guardados no Keychain) -> download da .ipa
 //   -> FetchProvisioningProfilesOperation (perfil do App ID) -> ResignAppOperation (AppBundleSigner do SideSign)
 //   -> CreateIpaOperation + SendAppOperation (AFC para PublicStaging) -> InstallAppOperation (installation_proxy).
@@ -9,10 +9,11 @@ import SideSign
 
 /// A conta já tem o máximo de certificados e o certificado com chave privada deste iPhone não existe:
 /// para assinar é preciso revogar um (o SideStore pergunta antes, aqui o JS pergunta e chama de novo com revogar).
+/// O certificado do SideStore nunca entra na lista (CertificadoDoSideStore em SideStore.swift).
 struct PrecisaRevogar: LocalizedError {
     let certificados: [String]
     var errorDescription: String? {
-        "A conta Apple já está no limite de certificados. Para assinar a versão nova é preciso revogar um certificado antigo; apps instalados com ele (por exemplo pelo AltStore) podem parar de abrir. A Agenda é reinstalada já com o certificado novo."
+        "A conta Apple já está no limite de certificados. Para assinar a versão nova é preciso revogar um certificado antigo; apps instalados com ele (por exemplo pelo AltStore) podem parar de abrir. O certificado do SideStore nunca é revogado. A Agenda é reinstalada já com o certificado novo."
     }
 }
 
@@ -54,7 +55,7 @@ extension Renovador {
         return n(a) == n(b)
     }
 
-    // MARK: fonte (o mesmo altstore.json que o AltStore lia)
+    // MARK: fonte (altstore.json: mesmo app e versão da sidestore.json, com o link fixo Agenda.ipa)
 
     func lerFonte() async throws -> Lancamento {
         var pedido = URLRequest(url: Self.urlFonte, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
@@ -152,11 +153,11 @@ extension Renovador {
             throw FalhaRenovacao("Nenhum time de desenvolvedor nesta conta.")
         }
         if let t = emb?.teamID, t != time.identifier {
-            throw FalhaRenovacao("O app foi assinado pelo time \(t), mas este Apple ID é do time \(time.identifier). Entre com o mesmo Apple ID usado no AltStore.")
+            throw FalhaRenovacao("O app foi assinado pelo time \(t), mas este Apple ID é do time \(time.identifier). Entre com o mesmo Apple ID usado no SideStore.")
         }
 
         // 2) Certificado com chave privada (CertificateProvisioningFlow do SideStore). A chave do certificado
-        //    do AltStore ficou no AltStore; na 1ª vez cria um certificado novo e guarda (com a chave) no Keychain.
+        //    do SideStore fica no SideStore; na 1ª vez cria um certificado novo e guarda (com a chave) no Keychain.
         avisar("certificado", "Conferindo o certificado de assinatura…", 0.08)
         let noPortal = try await portal.fetchCertificates(for: time, session: s)
         var chave = certificadoGuardado(valeEm: noPortal)
@@ -167,8 +168,13 @@ extension Renovador {
                 chave = try await criarCertificado(time: time, sessao: s)
                 certificadoNovo = true
             } catch let e where Self.limiteDeCertificados(e) {
-                aRevogar = Self.ordemParaRevogar(noPortal)
-                if aRevogar.isEmpty { throw e }
+                // Nunca o do SideStore: se só ele sobrar, devolve o erro para o João escolher.
+                let intocaveis = certificadosProtegidos(noPortal)
+                aRevogar = Self.ordemParaRevogar(noPortal, protegidos: intocaveis.map { $0.serialNumber })
+                if aRevogar.isEmpty {
+                    if !intocaveis.isEmpty { throw CertificadoDoSideStore() }
+                    throw e
+                }
                 if !revogar { throw PrecisaRevogar(certificados: aRevogar.map { $0.machineName ?? $0.name }) }
             }
         }
@@ -268,7 +274,10 @@ extension Renovador {
     }
 
     private func trocarCertificado(_ candidatos: [X509Certificate], time: Team, sessao s: Session) async throws -> KeyStore {
+        // Segunda trava: mesmo que um do SideStore chegue aqui, ele não é revogado.
+        let intocaveis = certificadosProtegidos(candidatos)
         for c in candidatos.prefix(3) {
+            if intocaveis.contains(where: { Self.mesmoSerial($0.serialNumber, c.serialNumber) }) { continue }
             _ = try await portal.revokeCertificate(c, for: time, session: s)
             do { return try await criarCertificado(time: time, sessao: s) }
             catch let e where Self.limiteDeCertificados(e) { continue }
@@ -282,15 +291,20 @@ extension Renovador {
         return m.contains("maximum number of certificates") || m.contains("already have a current")
     }
 
-    /// Primeiro um certificado antigo deste app (chave perdida), depois os do AltStore/SideStore, depois os mais antigos.
-    static func ordemParaRevogar(_ lista: [X509Certificate]) -> [X509Certificate] {
+    /// Primeiro um certificado antigo deste app (chave perdida), depois os do AltStore, depois os mais antigos.
+    /// Nunca o do SideStore (pelo nome) nem os seriais em `protegidos`: revogar o certificado do SideStore
+    /// faz o SideStore e todos os apps assinados por ele pararem de abrir.
+    static func ordemParaRevogar(_ lista: [X509Certificate], protegidos: [String] = []) -> [X509Certificate] {
         func prioridade(_ c: X509Certificate) -> Int {
             let n = (c.machineName ?? "").lowercased()
             if n.hasPrefix("agenda") { return 0 }
-            if n.contains("altstore") || n.contains("sidestore") { return 1 }
+            if n.contains("altstore") { return 1 }
             return 2
         }
-        return lista.sorted { a, b in
+        let revogaveis = lista.filter { c in
+            !Self.ehDoSideStore(c) && !protegidos.contains(where: { Self.mesmoSerial($0, c.serialNumber) })
+        }
+        return revogaveis.sorted { a, b in
             let pa = prioridade(a), pb = prioridade(b)
             return pa != pb ? pa < pb : a.creationDate < b.creationDate
         }
@@ -331,9 +345,11 @@ extension Renovador {
     }
 
     /// Mesmo preparo do ResignAppOperation.prepare: bundle id do app instalado, sem DTXcode e sem _CodeSignature velho.
+    /// Mantém as marcas do SideStore/AltStore do app instalado (o SideStore continua vendo e renovando a Agenda).
     private func prepararPacote(_ appURL: URL, bundleID: String) throws {
         var info = try lerInfo(appURL)
         info["CFBundleIdentifier"] = bundleID
+        Self.manterMarcasDaLoja(em: &info)
         info.removeValue(forKey: "DTXcode")
         info.removeValue(forKey: "DTXcodeBuild")
         let dados = try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0)
