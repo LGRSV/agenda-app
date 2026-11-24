@@ -1,4 +1,4 @@
-name: Compilar app iOS (sem assinatura, para o AltStore)
+name: Compilar app iOS (sem assinatura, para o SideStore)
 
 on:
   push:
@@ -78,6 +78,11 @@ jobs:
           pb "Add :CFBundleURLTypes:0:CFBundleURLName string com.lgrsv.agenda"
           pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes array"
           pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string agenda-lgrsv"
+          # Para o app saber se o SideStore (ou o AltStore) está no iPhone: o canOpenURL do iOS só responde
+          # "sim" para esquemas listados aqui (AgendaRenovacao.sidestoreInstalado).
+          pb "Add :LSApplicationQueriesSchemes array"
+          pb "Add :LSApplicationQueriesSchemes:0 string sidestore"
+          pb "Add :LSApplicationQueriesSchemes:1 string altstore"
           /usr/libexec/PlistBuddy -c "Print" "$P"
 
       - name: Ícone
@@ -136,6 +141,13 @@ jobs:
           cp -R ios/App/build/Build/Products/Release-iphoneos/App.app out/Payload/
           cd out && zip -qry Agenda.ipa Payload && ls -la Agenda.ipa
 
+      # O SideStore recusa a instalação se bundle id, versão, build ou tamanho da .ipa não baterem com a fonte.
+      - name: Conferir a .ipa (o que o SideStore confere)
+        id: ipa
+        run: |
+          set -o pipefail
+          python3 .github/fonte.py conferir out/Agenda.ipa "1.0.${{ github.run_number }}" "${{ github.run_number }}" | tee -a "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Agenda-ipa
@@ -145,53 +157,37 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.ipa.outputs.versao }}
         run: |
-          gh release view ultima >/dev/null 2>&1 || gh release create ultima --title "Agenda (iOS)" --notes "Instalar pelo AltStore; depois o próprio app se atualiza (menu Renovação do app)."
-          gh release upload ultima out/Agenda.ipa --clobber
+          NOTAS="Instalar pelo SideStore: em Fontes, toque em + e adicione https://raw.githubusercontent.com/LGRSV/agenda-app/fonte/sidestore.json; depois instale a Agenda. O SideStore renova e atualiza o app (com o LocalDevVPN ligado). O próprio app também se renova e se atualiza (menu Renovação do app). A fonte antiga do AltStore (altstore.json) continua publicada."
+          gh release view ultima >/dev/null 2>&1 || gh release create ultima --title "Agenda (iOS)" --notes "$NOTAS"
+          gh release edit ultima --notes "$NOTAS"
+          # Agenda.ipa: link fixo (altstore.json e apps antigos). Agenda-<versão>.ipa: não muda depois de publicada,
+          # então o size e o sha256 da sidestore.json sempre batem com o que o SideStore baixa.
+          cp out/Agenda.ipa "out/Agenda-$VER.ipa"
+          gh release upload ultima out/Agenda.ipa "out/Agenda-$VER.ipa" --clobber
+          # Guarda só as 3 últimas .ipa com versão no nome.
+          gh release view ultima --json assets -q '.assets[].name' \
+            | grep -E '^Agenda-[0-9]+\.[0-9]+\.[0-9]+\.ipa$' | sort -t. -k3,3n \
+            | awk '{ a[NR] = $0 } END { for (i = 1; i <= NR - 3; i++) print a[i] }' \
+            | while read -r A; do gh release delete-asset ultima "$A" -y; done
 
-      - name: Atualizar a fonte do AltStore (altstore.json)
+      - name: Atualizar as fontes do SideStore e do AltStore (sidestore.json e altstore.json)
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.ipa.outputs.versao }}
         run: |
-          TAM=$(stat -f%z out/Agenda.ipa)
-          VER="1.0.${{ github.run_number }}"
-          DATA=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # O checkout da branch fonte apaga os arquivos do main: o script vai antes para /tmp.
+          cp .github/fonte.py /tmp/fonte.py
+          IPA="$PWD/out/Agenda.ipa"
+          export DATA=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           git fetch origin fonte 2>/dev/null && git checkout fonte 2>/dev/null || git checkout --orphan fonte
           git rm -rq . 2>/dev/null || true
-          cat > altstore.json <<JSON
-          {
-            "name": "Agenda do Lagares",
-            "identifier": "com.lgrsv.agenda.fonte",
-            "sourceURL": "https://raw.githubusercontent.com/LGRSV/agenda-app/fonte/altstore.json",
-            "apps": [{
-              "name": "Agenda",
-              "bundleIdentifier": "com.lgrsv.agenda",
-              "developerName": "LGRSV",
-              "localizedDescription": "Agenda com GPS em segundo plano, lembretes locais, renovação automática do perfil de 7 dias e atualização pelo próprio app (LocalDevVPN + pairing file).",
-              "iconURL": "https://lgrsv.github.io/agenda-iphone/icon-512.png",
-              "versions": [{
-                "version": "$VER",
-                "buildVersion": "${{ github.run_number }}",
-                "date": "$DATA",
-                "downloadURL": "https://github.com/LGRSV/agenda-app/releases/download/ultima/Agenda.ipa",
-                "size": $TAM,
-                "minOSVersion": "15.0"
-              }],
-              "appPermissions": { "entitlements": [], "privacy": {
-                "NSLocationWhenInUseUsageDescription": "Registrar chegadas e saídas dos seus lugares.",
-                "NSLocationAlwaysAndWhenInUseUsageDescription": "Registrar chegadas e saídas com o app fechado.",
-                "NSLocationAlwaysUsageDescription": "Registrar chegadas e saídas com o app fechado.",
-                "NSMicrophoneUsageDescription": "Ditar tarefas e perguntas ao Jarvis (só ao tocar no microfone).",
-                "NSSpeechRecognitionUsageDescription": "Transcrever o ditado em português no próprio iPhone.",
-                "NSContactsUsageDescription": "Buscar nome e telefone para ligar uma tarefa a uma pessoa.",
-                "NSCalendarsFullAccessUsageDescription": "Mostrar os eventos do dia e da semana na tela inicial.",
-                "NSPhotoLibraryAddUsageDescription": "Salvar no rolo as imagens e PDFs que você pedir." } }
-            }],
-            "news": []
-          }
-          JSON
+          python3 /tmp/fonte.py fontes "$IPA" "$VER" "${{ github.run_number }}"
+          python3 -m json.tool sidestore.json > /dev/null
           python3 -m json.tool altstore.json > /dev/null
-          git -c user.name="github-actions" -c user.email="actions@github.com" add altstore.json
-          git -c user.name="github-actions" -c user.email="actions@github.com" commit -qm "Fonte AltStore: Agenda $VER"
+          cat sidestore.json
+          git -c user.name="github-actions" -c user.email="actions@github.com" add sidestore.json altstore.json
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -qm "Fontes SideStore e AltStore: Agenda $VER"
           git push -q origin fonte
