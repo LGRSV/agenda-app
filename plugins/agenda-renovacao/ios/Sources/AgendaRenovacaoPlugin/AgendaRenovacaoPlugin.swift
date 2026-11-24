@@ -1,6 +1,6 @@
 // AgendaRenovacaoPlugin.swift — ponte Capacitor (JS: Capacitor.registerPlugin('AgendaRenovacao')).
 // Métodos: estado, entrar, enviarCodigo, cancelarEntrada, sair, salvarPareamento, apagarPareamento, renovar, iconeAtual, trocarIcone,
-//          versaoDisponivel, atualizar ({revogar?, forcar?}), ligarVpn.
+//          versaoDisponivel, atualizar ({revogar?, forcar?}), ligarVpn, sidestoreInstalado, abrirSideStore ({fonte?}).
 // Eventos: "codigo2fa" {modo, erro?, telefone?} -> responder com enviarCodigo({codigo}) ou enviarCodigo({sms:true});
 //          "atualizacao" {etapa, texto, progresso 0-100} durante atualizar().
 // Parte do plugin AgendaRenovacao (AGPL-3.0), baseado no fluxo de renovação do SideStore.
@@ -27,7 +27,9 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "trocarIcone", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "versaoDisponivel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "atualizar", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "ligarVpn", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "ligarVpn", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "sidestoreInstalado", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "abrirSideStore", returnType: CAPPluginReturnPromise)
     ]
 
     private let motor = Renovador.shared
@@ -219,6 +221,48 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             UIApplication.shared.open(url, options: [:]) { ok in
                 call.resolve(["aberto": ok, "volta": volta ?? ""])
+            }
+        }
+    }
+
+    // MARK: SideStore (SideStore.swift)
+
+    /// SideStore (e AltStore) no iPhone e quem instalou este app. O canOpenURL só enxerga esquemas listados em
+    /// LSApplicationQueriesSchemes (o build põe "sidestore" e "altstore"); "consegueVer" diz se este build tem isso.
+    @objc func sidestoreInstalado(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let declarados = Bundle.main.object(forInfoDictionaryKey: "LSApplicationQueriesSchemes") as? [String] ?? []
+            let abre: (String) -> Bool = { esquema in
+                guard declarados.contains(esquema), let url = URL(string: esquema + "://") else { return false }
+                return UIApplication.shared.canOpenURL(url)
+            }
+            let por = Renovador.instaladoPor
+            let consegueVer = declarados.contains("sidestore")
+            call.resolve([
+                "instalado": consegueVer ? abre("sidestore") : por == "sidestore",
+                "altstore": abre("altstore"),
+                "instaladoPor": por,
+                "consegueVer": consegueVer,
+                "fonte": Renovador.urlFonteSideStore.absoluteString
+            ])
+        }
+    }
+
+    /// Abre o SideStore. {fonte: true} (padrão) já abre no pedido de adicionar a fonte da Agenda
+    /// (sidestore://source?url=<sidestore.json>, URLHandler do SideStore); {fonte: false} só abre o app.
+    @objc func abrirSideStore(_ call: CAPPluginCall) {
+        var alvo = URL(string: "sidestore://")
+        if call.getBool("fonte") ?? true {
+            var permitidos = CharacterSet.alphanumerics
+            permitidos.insert(charactersIn: "-._~")
+            if let valor = Renovador.urlFonteSideStore.absoluteString.addingPercentEncoding(withAllowedCharacters: permitidos) {
+                alvo = URL(string: "sidestore://source?url=" + valor)
+            }
+        }
+        guard let url = alvo else { call.reject("Link do SideStore inválido."); return }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url, options: [:]) { ok in
+                call.resolve(["aberto": ok, "url": url.absoluteString])
             }
         }
     }
