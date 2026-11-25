@@ -160,8 +160,10 @@ extension Renovador {
         //    do SideStore fica no SideStore; na 1ª vez cria um certificado novo e guarda (com a chave) no Keychain.
         avisar("certificado", "Conferindo o certificado de assinatura…", 0.08)
         let noPortal = try await portal.fetchCertificates(for: time, session: s)
+        let comSideStore = await Self.sidestoreNoAparelho()
         var chave = certificadoGuardado(valeEm: noPortal)
         var aRevogar: [X509Certificate] = []
+        var protegidos: [String] = []
         var certificadoNovo = false
         if chave == nil {
             do {
@@ -169,8 +171,9 @@ extension Renovador {
                 certificadoNovo = true
             } catch let e where Self.limiteDeCertificados(e) {
                 // Nunca o do SideStore: se só ele sobrar, devolve o erro para o João escolher.
-                let intocaveis = certificadosProtegidos(noPortal)
-                aRevogar = Self.ordemParaRevogar(noPortal, protegidos: intocaveis.map { $0.serialNumber })
+                let intocaveis = Self.certificadosProtegidos(noPortal, sidestoreNoAparelho: comSideStore)
+                protegidos = intocaveis.map { $0.serialNumber }
+                aRevogar = Self.ordemParaRevogar(noPortal, protegidos: protegidos)
                 if aRevogar.isEmpty {
                     if !intocaveis.isEmpty { throw CertificadoDoSideStore() }
                     throw e
@@ -198,7 +201,7 @@ extension Renovador {
         // 4) No limite de certificados: revoga (o usuário confirmou) e cria um novo.
         if chave == nil {
             avisar("certificado", "Trocando o certificado de assinatura…", 0.6)
-            chave = try await trocarCertificado(aRevogar, time: time, sessao: s)
+            chave = try await trocarCertificado(aRevogar, protegidos: protegidos, time: time, sessao: s)
             certificadoNovo = true
         }
         guard let chave else { throw FalhaRenovacao("Sem certificado para assinar.") }
@@ -273,11 +276,10 @@ extension Renovador {
         return chave
     }
 
-    private func trocarCertificado(_ candidatos: [X509Certificate], time: Team, sessao s: Session) async throws -> KeyStore {
-        // Segunda trava: mesmo que um do SideStore chegue aqui, ele não é revogado.
-        let intocaveis = certificadosProtegidos(candidatos)
+    private func trocarCertificado(_ candidatos: [X509Certificate], protegidos: [String], time: Team, sessao s: Session) async throws -> KeyStore {
         for c in candidatos.prefix(3) {
-            if intocaveis.contains(where: { Self.mesmoSerial($0.serialNumber, c.serialNumber) }) { continue }
+            // Segunda trava: mesmo que um do SideStore (ou protegido) chegue aqui, ele não é revogado.
+            if Self.ehDoSideStore(c) || protegidos.contains(where: { Self.mesmoSerial($0, c.serialNumber) }) { continue }
             _ = try await portal.revokeCertificate(c, for: time, session: s)
             do { return try await criarCertificado(time: time, sessao: s) }
             catch let e where Self.limiteDeCertificados(e) { continue }

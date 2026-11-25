@@ -3,9 +3,10 @@
 //     esquema "sidestore-<bundle id>" em CFBundleURLTypes e o tipo "io.sidestore.Installed.<bundle id>"
 //     em UTExportedTypeDeclarations (InstalledApp.openAppURL / installedAppUTI). O AltStore usa "altstore-" e "io.altstore.".
 //   - Certificado do SideStore: a Agenda nunca revoga (o SideStore e os apps dele parariam de abrir).
+//     Com o SideStore no iPhone, a Agenda só revoga certificados dela mesma ("Agenda - iPhone").
 // Parte do plugin AgendaRenovacao (AGPL-3.0), baseado no SideStore (https://github.com/SideStore/SideStore).
 import Foundation
-import Security
+import UIKit
 import SideSign
 
 extension Renovador {
@@ -75,30 +76,31 @@ extension Renovador {
         return n.contains("sidestore") || n.contains("iloader")
     }
 
-    /// Seriais (hex) dos certificados do perfil embutido, isto é, de quem assinou este app.
-    func seriaisDoApp() -> [String] {
-        (perfilEmbutido()?.certificados ?? []).compactMap { der -> String? in
-            guard let c = SecCertificateCreateWithData(nil, der as CFData),
-                  let serial = SecCertificateCopySerialNumberData(c, nil) else { return nil }
-            return (serial as Data).map { String(format: "%02x", $0) }.joined()
-        }
+    /// SideStore no iPhone (canOpenURL; o build declara "sidestore" em LSApplicationQueriesSchemes).
+    @MainActor static func sidestoreNoAparelho() -> Bool {
+        let declarados = Bundle.main.object(forInfoDictionaryKey: "LSApplicationQueriesSchemes") as? [String] ?? []
+        guard declarados.contains("sidestore"), let url = URL(string: "sidestore://") else { return false }
+        return UIApplication.shared.canOpenURL(url)
     }
 
-    /// Certificados da lista que a Agenda não pode revogar: os do SideStore pelo nome e, se o SideStore
-    /// instalou o app, o que assinou este app (é o mesmo que assina o SideStore e os apps dele).
-    func certificadosProtegidos(_ lista: [X509Certificate]) -> [X509Certificate] {
-        let doApp = Self.instaladoPor == "sidestore" ? seriaisDoApp() : []
+    /// Certificados da lista que a Agenda não pode revogar. Os com nome do SideStore/iloader sempre.
+    /// Com o SideStore no iPhone (ou se foi ele que instalou a Agenda) não dá para saber pelo nome qual é o dele
+    /// (instalado pelo AltServer, por exemplo, ele se chama "AltStore"): aí todos ficam protegidos, menos os
+    /// da própria Agenda ("Agenda - iPhone"). Sem SideStore, vale a ordem de antes (os do AltStore podem sair).
+    static func certificadosProtegidos(_ lista: [X509Certificate], sidestoreNoAparelho: Bool) -> [X509Certificate] {
+        let comSideStore = sidestoreNoAparelho || instaladoPor == "sidestore"
         return lista.filter { c in
-            if Self.ehDoSideStore(c) { return true }
+            if ehDoSideStore(c) { return true }
             if (c.machineName ?? "").lowercased().hasPrefix("agenda") { return false }   // certificado da própria Agenda
-            return doApp.contains { Self.mesmoSerial($0, c.serialNumber) }
+            return comSideStore
         }
     }
 }
 
-/// No limite de certificados só sobrou o do SideStore: a Agenda não revoga (devolve para o João escolher).
+/// No limite de certificados só sobraram certificados que podem ser do SideStore: a Agenda não revoga
+/// (devolve para o João escolher).
 struct CertificadoDoSideStore: LocalizedError {
     var errorDescription: String? {
-        "A conta Apple está no limite de certificados e o único que daria para trocar é o do SideStore. A Agenda não revoga esse certificado, porque o SideStore e os apps dele parariam de abrir. Escolha: atualize a Agenda pelo SideStore (Meus Apps), ou revogue um certificado você mesmo (no SideStore ou no iloader) e tente de novo."
+        "A conta Apple está no limite de certificados e os que daria para trocar podem ser do SideStore. A Agenda não revoga esses certificados, porque o SideStore e os apps dele parariam de abrir. Atualize a Agenda pelo SideStore (Meus Apps), ou revogue você mesmo um certificado que não usa (por exemplo, pelo iloader no computador) e tente de novo."
     }
 }
