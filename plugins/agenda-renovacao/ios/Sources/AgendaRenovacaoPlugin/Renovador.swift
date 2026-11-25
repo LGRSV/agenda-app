@@ -91,7 +91,7 @@ final class Renovador: @unchecked Sendable {
 
         var r: [String: Any] = [
             "bundleId": bid,
-            "logado": Cofre.ler(.token) != nil || Cofre.ler(.senha) != nil,
+            "logado": Cofre.ler(.token) != nil || Cofre.existe(.senha),   // existe(): não abre o Face ID só para mostrar a tela
             "temPareamento": FileManager.default.fileExists(atPath: arquivoPareamento.path),
             "instaladoPor": Self.instaladoPor   // "sidestore", "altstore" ou "" (SideStore.swift)
         ]

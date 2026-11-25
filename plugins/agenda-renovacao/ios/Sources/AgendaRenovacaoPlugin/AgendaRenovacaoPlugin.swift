@@ -159,8 +159,13 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func renovar(_ call: CAPPluginCall) {
         let ip = lerIP(call), porta = lerPorta(call)
         Task {
-            do { call.resolve(try await motor.renovar(ip: ip, portaRP: porta)) }
-            catch { rejeitar(call, error) }
+            do {
+                // 25/11/2026: renovar só com o Face ID do dono (ver Biometria.swift).
+                try await Biometria.confirmar("Confirme com o Face ID para renovar a Agenda.")
+                defer { Biometria.encerrar() }
+                Cofre.protegerSenha()
+                call.resolve(try await motor.renovar(ip: ip, portaRP: porta))
+            } catch { rejeitar(call, error) }
         }
     }
 
@@ -174,7 +179,10 @@ public class AgendaRenovacaoPlugin: CAPPlugin, CAPBridgedPlugin {
         let ip = lerIP(call), porta = lerPorta(call)
         let revogar = call.getBool("revogar") ?? false, forcar = call.getBool("forcar") ?? false
         Task {
+            defer { Biometria.encerrar() }
             do {
+                try await Biometria.confirmar("Confirme com o Face ID para atualizar a Agenda.")
+                Cofre.protegerSenha()
                 call.resolve(try await motor.atualizar(ip: ip, portaRP: porta, revogar: revogar, forcar: forcar))
             } catch let e as PrecisaRevogar {
                 call.reject(e.localizedDescription, "PRECISA_REVOGAR", nil,

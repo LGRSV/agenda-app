@@ -59,6 +59,7 @@ jobs:
           pb "Add :NSLocationAlwaysAndWhenInUseUsageDescription string A Agenda registra chegadas e saídas mesmo com o app fechado."
           pb "Add :NSLocationAlwaysUsageDescription string A Agenda registra chegadas e saídas mesmo com o app fechado."
           # Plugin AgendaAcesso: cada permissão só é pedida quando o usuário toca na função.
+          pb "Add :NSFaceIDUsageDescription string A Agenda usa o Face ID para confirmar que é você antes de renovar ou atualizar o app."
           pb "Add :NSMicrophoneUsageDescription string A Agenda usa o microfone só quando você toca no botão de falar, para ditar tarefas e perguntas ao Jarvis. O áudio não é gravado nem enviado."
           pb "Add :NSSpeechRecognitionUsageDescription string O que você fala é transcrito em português no próprio iPhone para virar tarefa ou pergunta ao Jarvis."
           pb "Add :NSContactsUsageDescription string A Agenda lê nome e telefone dos contatos que você buscar, para ligar uma tarefa a uma pessoa e abrir a ligação ou o WhatsApp. Os contatos não vão para a nuvem."

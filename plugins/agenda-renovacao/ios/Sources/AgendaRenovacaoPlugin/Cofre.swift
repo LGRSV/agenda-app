@@ -28,6 +28,10 @@ enum Cofre {
         var q = consulta(chave)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
+        if chave == .senha {
+            // 25/11/2026: a senha só abre com o Face ID já aprovado (Biometria.contexto); sem ele, não pede nada e falha.
+            q[kSecUseAuthenticationContext as String] = Biometria.contexto ?? Biometria.contextoSilencioso()
+        }
         var saida: AnyObject?
         guard SecItemCopyMatching(q as CFDictionary, &saida) == errSecSuccess,
               let dados = saida as? Data,
@@ -42,9 +46,35 @@ enum Cofre {
         guard let valor, !valor.isEmpty, let dados = valor.data(using: .utf8) else { return }
         var novo = q
         novo[kSecValueData as String] = dados
+        if chave == .senha,
+           let acesso = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .userPresence, nil) {
+            // 25/11/2026: senha do Apple ID só com o dono presente (Face ID ou código do iPhone); fica só neste aparelho.
+            novo[kSecAttrAccessControl as String] = acesso
+            if let ctx = Biometria.contexto { novo[kSecUseAuthenticationContext as String] = ctx }
+            if SecItemAdd(novo as CFDictionary, nil) == errSecSuccess { return }
+            // iPhone sem código: grava do jeito antigo para a renovação não parar.
+            novo.removeValue(forKey: kSecAttrAccessControl as String)
+            novo.removeValue(forKey: kSecUseAuthenticationContext as String)
+        }
         // Disponível em segundo plano depois do 1º desbloqueio; não vai para backup/outro aparelho.
         novo[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(novo as CFDictionary, nil)
+    }
+
+    /// Diz se existe o item sem ler o conteúdo (não abre o Face ID).
+    static func existe(_ chave: Chave) -> Bool {
+        var q = consulta(chave)
+        q[kSecReturnAttributes as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        q[kSecUseAuthenticationContext as String] = Biometria.contextoSilencioso()
+        let st = SecItemCopyMatching(q as CFDictionary, nil)
+        return st == errSecSuccess || st == errSecInteractionNotAllowed
+    }
+
+    /// Senha gravada antes de 25/11/2026 (sem Face ID): regrava protegida. Chamar com o Face ID já aprovado.
+    static func protegerSenha() {
+        guard Biometria.contexto != nil, let s = ler(.senha) else { return }
+        gravar(.senha, s)
     }
 
     /// Identificador fixo da "máquina" anisette deste iPhone (a Apple lembra dela e não pede 2FA toda hora).
